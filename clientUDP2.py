@@ -1,128 +1,118 @@
-import os
 import socket
 import threading
 
-hostServidor = '<IP_DA_MAQUINA_QUE_VAI_RODAR_O_SERVIDOR>'
-host = '<IP_DA_MAQUINA_QUE_VAI_RODAR_O_CLIENTE>' 
-porta = 12346  # PORTA QUE O CLIENTE VAI OUVIR
-portaDestino = 12345 # PORTA QUE O SERVIDOR ESTÁ OUVINDO
 
-contatos = []
+host = '10.113.60.207' # Endereço IP do seu computador
+porta = 12345
 
-# Cria um objeto socket UDP
+ipserver = '10.113.60.230'
+portserver = 12345
+
+contatos = [('Albert','10.113.60.207'),('Monalisa','10.113.60.206')]
+
+
 socket_server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-
-# Liga o socket ao endereço e porta especificados
 socket_server.bind((host, porta))
 
+
 print(f"Servidor UDP aguardando mensagens em {host}:{porta}")
+print("Contatos disponíveis:")
+for contato in contatos:
+    print(contato[0])
 
 
-def limparTela():
-    if os.name == 'posix':
-        os.system('clear')
-    elif os.name == 'nt':
-        os.system('cls')
+enderecos_contatos = {nome: ip for nome, ip in contatos}
 
 
-def obterContatoPorCampo(nomeCampo, valorCampo):
-    global contatos
-
-    contatoEncontrado = None
-
-    for contato in contatos:
-        if (contato[nomeCampo] == valorCampo):
-            contatoEncontrado = contato
-            break
-
-    return contatoEncontrado
+lock = threading.Lock()
 
 
+# Função para receber mensagens
 def receber_mensagens():
-    global contatos
-
     while True:
         try:
-            # Recebe os dados e o endereço do remetente
-            dados, endereco = socket_server.recvfrom(
-                1024)  # Tamanho do buffer é 1024 bytes
-
+        # Recebe os dados e o endereço do remetente
+            dados, endereco = socket_server.recvfrom(1024) # Tamanho do buffer é 1024 bytes
             mensagem = dados.decode('utf-8')
-
-            if (endereco[0] == hostServidor and endereco[1] == 12345):
-                contatos = []
-
-                linhas = mensagem.split("\n")
-
-                for linha in linhas:
-                    if (linha):
-                        nome, ip = linha.split(",")
-                        contatos.append({"nome": nome, "ip": ip})
-
-                limparTela()
-
-                print('\nLista de contatos atualizada!\n')
-
-                for contato in contatos:
-                    print(f"IP: {contato['ip']}, Nome: {contato['nome']}")
-            else:
-                contatoEncontrado = obterContatoPorCampo('ip', endereco[0])
-
-                if (contatoEncontrado is not None):
-                    print(f"{contatoEncontrado['nome']} disse: {mensagem}")
-                else:
-                    print(f"{endereco[0]} disse: {mensagem}")
-
+            print(f"Recebido de {endereco[0]}:{endereco[1]}: {mensagem}")
+            if endereco[0]== ipserver:
+                atualizaLista(endereco,mensagem)
+            
         except UnicodeDecodeError:
-            print(
-                f"Recebido de {endereco[0]}:{endereco[1]}: Erro de decodificação (não UTF-8)")
-
-
+            print(f"Recebido de {endereco[0]}:{endereco[1]}: Erro de decodificação (não UTF-8)")
 # Inicializa uma thread para receber mensagens
 thread_recebimento = threading.Thread(target=receber_mensagens)
 thread_recebimento.daemon = True
 thread_recebimento.start()
 
-# Função para enviar mensagens
 
+def atualizaLista(endereco,mensagem):
+    
+    try:
+        contatos_strings = mensagem.split('\n')
+        contatos.clear()  
+        for contato_str in contatos_strings:
+            if contato_str:
+                print(contato_str.split(','))
+                nome, ip = contato_str.split(',')
+                contatos.append((nome, ip))
+        
+        enderecos_contatos.clear()
+        enderecos_contatos.update(dict(contatos))
+        
+        print("Contatos atualizados:")
+        for contato in contatos:
+            print(f"{contato[0]}: {contato[1]}")
+    except UnicodeDecodeError:
+        print(f"Recebido de {endereco[0]}:{endereco[1]}: Erro de decodificação (não UTF-8)")
 
 def enviar_mensagens():
     cliente_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
-    while True:
-        destino_ip = input("\nDigite o endereço IP de destino: ")
-        mensagem = input("Digite a mensagem a ser enviada: ")
 
-        if mensagem == "/sair":
+    while True:
+        mensagem = input("Digite a mensagem (no formato '.destinatario_mensagem' ou '.entrar_nome' para iniciar/sair de um chat): ")
+        if mensagem == "\sair":
             print("Encerrando o programa...")
             print("Fechando portas de escuta:")
-            thread_recebimento.join()
+            #thread_recebimento.join()
             break
-        elif mensagem.startswith(".") and not '.contatos' in mensagem and not '.entrar' in mensagem:
-            destinatario = obterContatoPorCampo(
-                'nome', mensagem.split()[0].replace('.', ''))
-
-            if (destinatario == None):
-                print('Contato não encontrado')
-            else:
-                separator = ' '
-
-                mensagemParaEnviar = separator.join(mensagem.split()[1:])
-
-                cliente_socket.sendto(mensagemParaEnviar.encode(
-                    'utf-8'), (destinatario['ip'], portaDestino))
         else:
-            cliente_socket.sendto(mensagem.encode(
-                'utf-8'), (destino_ip, portaDestino))
+            if mensagem.startswith('.entrar '):
+                destinatario = mensagem[8:]
+                cliente_socket.sendto(mensagem.encode('utf-8'),(ipserver, portserver))
 
 
-# Inicializa uma thread para enviar mensagens
+            elif mensagem.startswith('.contatos'):
+                destinatario = mensagem[8:]
+                cliente_socket.sendto(mensagem.encode('utf-8'),(ipserver, portserver))
+                #atualizaLista()
+            elif mensagem.startswith('.sair '):
+                destinatario = mensagem[8:]
+                cliente_socket.sendto(mensagem.encode('utf-8'),(ipserver, portserver))
+            elif mensagem.startswith('.') and ' ' in mensagem:
+                mensagem = mensagem[1:]
+                nome_destinatario, mensagem = mensagem.split(' ', 1)
+
+                if nome_destinatario in enderecos_contatos:
+                    print(nome_destinatario)
+                    destino_ip = enderecos_contatos[nome_destinatario]
+                    end_destino_ip = (destino_ip, porta)
+                    cliente_socket.sendto(mensagem.encode('utf-8'), end_destino_ip)
+                else:
+                    print(f"Erro: {nome_destinatario} não é um contato válido.")
+
+
+            else:
+                
+                cliente_socket.sendto(mensagem.encode('utf-8'), ("192.168.60.230", portserver))
+
+
 thread_envio = threading.Thread(target=enviar_mensagens)
 thread_envio.start()
 
-# Aguarda as threads finalizarem
+
 thread_envio.join()
 print("Threads encerradas.")
-# Feche o socket (isso nunca será executado no loop acima)
 socket_server.close()
 print("Socket encerrado. Bye Bye")
